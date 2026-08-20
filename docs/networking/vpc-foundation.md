@@ -34,13 +34,13 @@ We also need to plan our IP address range carefully. If CloudOps Hub needs to co
 
 ### The Problem
 
-A VPC is a broader network, and deploying all the resources without separating the network may make it difficult to manage the different connectivity requirements of the Web, Application, and Database layers.
+A VPC is a broader network, and deploying all resources without separating the network may make it difficult to manage the different connectivity requirements of the Web, Application, and Database layers.
 
 For example, we want the Web layer to have internet connectivity, while the Application and Database layers should remain private.
 
 ### What I Learned
 
-- We can divide the larger VPC network into smaller networks called subnets. This helps us separate the resources based on their connectivity and routing requirements.
+- We can divide the larger VPC network into smaller networks called subnets. This helps us separate resources based on their connectivity and routing requirements.
 
 - For CloudOps Hub, we created separate subnets for each application layer:
 
@@ -60,27 +60,29 @@ For example, we want the Web layer to have internet connectivity, while the Appl
 
 ### The Problem
 
-Deploying all the application resources in a single Availability Zone creates a single failure domain. If that Availability Zone becomes unavailable, the entire application may become inaccessible to users, resulting in customer and business impact.
+Deploying all application resources in a single Availability Zone creates a single failure domain.
+
+If that Availability Zone becomes unavailable, the entire application may become inaccessible to users, resulting in customer and business impact.
 
 ### What I Learned
 
 - We can improve application availability by distributing resources across multiple Availability Zones instead of depending on a single AZ.
 
-- However, simply deploying resources in multiple Availability Zones does not automatically make the application highly available. We also need to ensure that traffic can be distributed across the healthy resources in those Availability Zones.
+- Simply deploying resources in multiple Availability Zones does not automatically make an application highly available.
 
-- For example, a load balancer can distribute traffic across resources in multiple Availability Zones and use health checks to avoid sending requests to unhealthy resources.
+- We also need mechanisms such as load balancing, health checks, failover, and database redundancy.
 
-- If one Availability Zone becomes unavailable, resources in another healthy Availability Zone can continue serving user requests.
-
-- Database redundancy requires additional consideration because databases contain state. Simply creating another database server in a different Availability Zone does not automatically ensure that both databases contain consistent data.
+- Database redundancy requires additional consideration because databases contain state. Simply creating another database server in another Availability Zone does not guarantee data consistency.
 
 ### CloudOps Hub V1 Decision
 
-For the initial manual deployment, CloudOps Hub will use a single Availability Zone.
+For the initial manual deployment, CloudOps Hub uses a single Availability Zone.
 
-This is an intentional decision to keep V1 simple while we learn and validate each component manually.
+This is intentional so that we can understand and validate each component before introducing high-availability complexity.
 
-We understand that this creates an Availability Zone-level failure risk. A future version of CloudOps Hub will evolve the architecture across multiple Availability Zones and introduce the required traffic distribution and redundancy mechanisms.
+We accept the Availability Zone-level failure risk in V1.
+
+A future version will evolve the architecture across multiple Availability Zones.
 
 ---
 
@@ -88,41 +90,51 @@ We understand that this creates an Availability Zone-level failure risk. A futur
 
 ### The Problem
 
-When we create a VPC, AWS automatically creates a main route table with a local route for communication within the VPC CIDR range.
+When we create a VPC, AWS automatically creates a main route table with a local route for communication within the VPC CIDR.
 
-However, the Web, Application, and Database layers of CloudOps Hub have different routing requirements.
+However, the Web, Application, and Database layers have different routing requirements.
 
 For example:
 
-- The Web layer needs a route to the Internet.
-- The Application layer should remain private, but may later require controlled outbound Internet access.
-- The Database layer should remain private and currently does not require Internet access.
+- The Web layer needs direct internet routing.
+- The Application layer should remain private.
+- The Database layer should remain private but currently requires controlled outbound connectivity for administration and software installation.
 
-Using the same routing policy for all the layers may provide connectivity that some workloads do not actually require.
+Using the same routing policy for every layer would provide connectivity that some workloads do not require.
 
 ### What I Learned
 
 - Route tables define where network traffic should be directed based on the destination.
 
-- AWS automatically creates a local route for the VPC CIDR. In our VPC, we observed:
+- AWS automatically creates a local route for the VPC CIDR:
 
   `10.0.0.0/16 → local`
 
-  This provides a routing path between resources within the VPC address space, subject to network security controls.
+- This provides a routing path between resources inside the VPC, subject to network security controls.
 
-- Instead of depending on the same route table for all the subnets, we created dedicated route tables for each layer:
+- We created dedicated route tables:
 
   - `cloudops-public-rt` → Web subnet
   - `cloudops-app-rt` → Application subnet
   - `cloudops-db-rt` → Database subnet
 
-- The Web route table has a default route to the Internet Gateway:
+### Current Routing
 
-  `0.0.0.0/0 → Internet Gateway`
+The Web route table contains:
 
-- The Application and Database route tables currently contain only the local VPC route and therefore do not have a direct route to the Internet.
+`0.0.0.0/0 → Internet Gateway`
 
-- Having separate route tables gives us more control over the routing requirements of each layer. For example, if the Application layer later requires outbound Internet connectivity, we can add a route through a NAT Gateway without providing the same connectivity to the Database layer.
+The Database route table contains:
+
+`0.0.0.0/0 → NAT Gateway`
+
+The Application route table currently contains only:
+
+`10.0.0.0/16 → local`
+
+This gives each application layer an independent routing policy.
+
+> **Different connectivity requirements should have different routing policies.**
 
 ---
 
@@ -130,72 +142,135 @@ Using the same routing policy for all the layers may provide connectivity that s
 
 ### The Problem
 
-Creating an Internet Gateway and attaching it to the VPC alone does not provide Internet connectivity to the resources in our Web subnet.
+Creating an Internet Gateway and attaching it to the VPC alone does not provide internet connectivity to resources.
 
-The subnet also needs a routing path that directs Internet-bound traffic to the Internet Gateway.
+A subnet must also have the appropriate routing configuration.
 
 ### What I Learned
 
-- An Internet Gateway (IGW) provides a path for communication between a VPC and the Internet.
+- An Internet Gateway (IGW) provides a communication path between a VPC and the Internet.
 
-- After creating the Internet Gateway, we attached it to our `cloudops-hub-vpc`.
+- We created:
 
-- Attaching the Internet Gateway to the VPC alone does not automatically make all the subnets public.
+  `cloudops-hub-igw`
 
-- For our Web subnet, we added the following route to `cloudops-public-rt`:
+- The Internet Gateway was attached to:
+
+  `cloudops-hub-vpc`
+
+- The Web subnet's route table contains:
 
   `0.0.0.0/0 → cloudops-hub-igw`
 
-- We associated `cloudops-public-rt` only with the Web subnet. This gives the Web subnet a direct routing path to the Internet Gateway.
+- The Application and Database subnets do not have a direct route to the Internet Gateway.
 
-- We did not add this route to the Application or Database route tables because those layers should not have direct Internet connectivity.
+- Even when a subnet has an Internet Gateway route, an EC2 instance still requires appropriate public addressing and security rules for direct internet communication.
 
-- Even with a route to an Internet Gateway, an EC2 instance still requires appropriate public addressing and security rules before it can communicate with the Internet.
+> **Attaching an Internet Gateway to a VPC does not automatically make every resource in the VPC public.**
 
 ---
 
-## 6. NAT
+## 6. NAT Gateway
 
 ### Implementation Status
 
-**Concept learned, not yet implemented in CloudOps Hub V1.**
+**Implemented for the Database subnet during the Database Foundation milestone.**
 
-### The Problem
+### The Original Problem
 
-In some situations, resources in a private subnet may need outbound Internet connectivity.
+Initially, CloudOps Hub did not have a requirement for private resources to access the Internet.
 
-For example, our Application server may need to download OS security updates, install software packages, or communicate with an external service.
+Because a NAT Gateway introduces additional infrastructure and cost, we deliberately decided not to deploy one without a requirement.
 
-However, we do not want to make the Application server directly public or provide the private Application subnet with a direct route to the Internet Gateway.
+That changed when we started building the Database layer.
 
-Our requirement is:
+The PostgreSQL EC2 instance was intentionally deployed:
 
-- Application Server → Internet ✅
-- Internet → Application Server directly ❌
+- In the private Database subnet
+- Without a public IPv4 address
+- Without inbound SSH access
+
+However, the server needed outbound connectivity for activities such as:
+
+- Installing PostgreSQL packages
+- Downloading operating system packages and updates
+- Communicating with AWS services required for administration
+
+The requirement became:
+
+```text
+DB EC2 → Outbound Connectivity      ✅
+Internet → DB EC2 Directly          ❌
+Public IPv4 on DB EC2               ❌
+```
 
 ### What I Learned
 
-- NAT (Network Address Translation) can provide outbound Internet connectivity for resources in a private subnet without making those resources directly public.
+A public NAT Gateway can provide outbound connectivity for resources in a private subnet without making those resources directly public.
 
-- For Internet-bound connectivity using a public NAT Gateway, the NAT Gateway is placed in a public subnet that has a route to the Internet Gateway.
+The NAT Gateway is placed in a public subnet with connectivity to the Internet Gateway.
 
-- The private Application subnet can then have a route such as:
+The private subnet then routes internet-bound traffic to the NAT Gateway.
 
-  `0.0.0.0/0 → NAT Gateway`
+### CloudOps Hub V1 Implementation
 
-- The traffic flow would be:
+A NAT Gateway was created in the Web/public subnet.
 
-  `Application Server → NAT Gateway → Internet Gateway → Internet`
+The Database route table was updated with:
 
-- The Application server initiates the outbound connection, and the response can return through the NAT Gateway. External Internet clients cannot use the NAT Gateway to initiate unsolicited connections directly to the private Application server.
+```text
+0.0.0.0/0 → NAT Gateway
+```
 
-- We should not automatically provide the Database subnet with the same NAT route if the Database layer does not require Internet connectivity.
+The resulting outbound path is:
 
-### CloudOps Hub V1 Decision
+```text
+Private DB EC2
+      │
+      ▼
+cloudops-db-rt
+      │
+      ▼
+NAT Gateway
+      │
+      ▼
+Internet Gateway
+      │
+      ▼
+AWS Public Endpoints / Internet
+```
 
-A NAT Gateway has **not been implemented yet**.
+The database server still:
 
-We will introduce NAT only when the Application layer has a real requirement for outbound Internet connectivity. This avoids adding unnecessary infrastructure, complexity, and cost to V1.
+- Has no public IPv4 address
+- Has no direct route to the Internet Gateway
+- Does not accept unsolicited inbound internet connections
+
+### Why This Decision Changed
+
+The original decision was:
+
+> **Do not introduce NAT without a requirement.**
+
+We followed that principle.
+
+Later, a real requirement appeared during the Database Foundation implementation.
+
+At that point, NAT became a solution to an actual problem rather than another AWS service added to the architecture without justification.
+
+This reinforced an important engineering principle:
+
+> **Architecture decisions are not permanent. When requirements change, revisit the decision and document why it changed.**
+
+### Cost Consideration
+
+NAT Gateway introduces ongoing cost.
+
+Because CloudOps Hub is currently a learning environment, the NAT Gateway does not need to remain deployed while the environment is inactive.
+
+It can be deleted when not required and recreated when learning continues.
+
+This trade-off will later give us a reason to explore automation and potentially alternative private connectivity designs.
 
 ---
 
@@ -203,35 +278,53 @@ We will introduce NAT only when the Application layer has a real requirement for
 
 ### The Problem
 
-Our resources should not accept all types of traffic just because a network path exists between them.
+A valid network route does not mean every resource should be allowed to communicate with every other resource.
 
-For example, users should be able to access the Web layer only on the required web ports. Similarly, the Application layer should accept application traffic only from the Web layer, and the Database layer should accept database traffic only from the Application layer.
-
-Without these controls, we may unnecessarily expose our resources and increase the security risk.
+Each application layer should accept only the traffic required for its function.
 
 ### What I Learned
 
-- Security Groups act as virtual firewalls for AWS resources and allow us to control inbound and outbound traffic.
+Security Groups act as virtual firewalls for AWS resources.
 
-- We can define which source is allowed to communicate with a resource and on which port.
+For CloudOps Hub, we created:
 
-- For CloudOps Hub, we created separate Security Groups for each layer:
+- `cloudops-web-sg`
+- `cloudops-app-sg`
+- `cloudops-db-sg`
 
-  - `cloudops-web-sg`
-  - `cloudops-app-sg`
-  - `cloudops-db-sg`
+The intended communication is:
 
-- Our intended communication is:
+```text
+Internet
+   │
+   │ HTTP/HTTPS
+   ▼
+Web
+   │
+   │ Application Port
+   ▼
+Application
+   │
+   │ PostgreSQL 5432
+   ▼
+Database
+```
 
-  `Internet → Web :80`  
-  `Web Security Group → Application :Application Port`  
-  `Application Security Group → Database :5432`
+Instead of allowing the entire VPC CIDR to access PostgreSQL, the Database Security Group can reference:
 
-- Instead of allowing the entire VPC CIDR to access the Database, we can use `cloudops-app-sg` as the source of the Database Security Group rule. This ensures that the Database accepts PostgreSQL traffic only from resources associated with the Application Security Group.
+`cloudops-app-sg`
 
-- Security Groups are stateful. When a connection is permitted, the response traffic associated with that connection is automatically allowed without requiring a separate rule specifically for the return traffic.
+as the allowed source on port:
 
-- Security Groups use allow rules. If traffic is not explicitly allowed by the applicable Security Group rules, it is not permitted.
+`5432`
+
+This means the security policy represents the application architecture instead of depending on individual server IP addresses.
+
+Security Groups are stateful. Response traffic for an allowed connection is automatically permitted.
+
+Security Groups contain allow rules. Traffic that is not allowed by the applicable rules is not permitted.
+
+> **Network membership does not imply network trust.**
 
 ---
 
@@ -243,29 +336,29 @@ Without these controls, we may unnecessarily expose our resources and increase t
 
 ### The Problem
 
-In some situations, there may be a requirement to allow or deny certain network traffic for an entire subnet rather than controlling access only at the individual resource level.
+Some architectures may require traffic to be controlled for an entire subnet rather than only individual resources.
 
-For example, we may need to block traffic from a particular network range from reaching any resource within a subnet.
+For example, there may be a requirement to explicitly deny traffic from a particular network range.
 
 ### What I Learned
 
-- Network ACLs (NACLs) provide network traffic control at the subnet level.
+- Network ACLs provide traffic controls at the subnet level.
 
-- Unlike Security Groups, which are associated with resources/network interfaces, a NACL is associated with a subnet.
+- NACLs support both **Allow** and **Deny** rules.
 
-- NACLs support both **Allow** and **Deny** rules. This can be useful when we need to explicitly block traffic from a particular network range.
+- NACLs are **stateless**, so inbound and outbound traffic are evaluated separately.
 
-- NACLs are **stateless**, which means inbound and outbound traffic are evaluated separately. Return traffic must therefore be considered when designing the rules.
+- Rules are evaluated in rule-number order starting with the lowest number.
 
-- NACL rules are evaluated in rule-number order, starting with the lowest number, and the first matching rule determines whether the traffic is allowed or denied.
-
-- AWS automatically created a default Network ACL when we created the CloudOps Hub VPC.
+- AWS created a default Network ACL when the CloudOps Hub VPC was created.
 
 ### CloudOps Hub V1 Decision
 
-We have not created a custom NACL for V1 because there is currently no requirement that needs subnet-level Allow/Deny rules.
+We have not created custom NACLs because the current architecture does not have a requirement for subnet-level Allow/Deny controls.
 
-For now, Security Groups provide the workload-level traffic controls required by CloudOps Hub. We will introduce custom NACLs only if a future requirement justifies them.
+Security Groups currently provide the workload-level controls we require.
+
+Custom NACLs will be introduced only when a requirement justifies them.
 
 ---
 
@@ -273,44 +366,47 @@ For now, Security Groups provide the workload-level traffic controls required by
 
 ### Implementation Status
 
-**Concept learned. Custom DNS is not implemented in CloudOps Hub V1.**
+**Concept learned. Custom internal DNS is not implemented in CloudOps Hub V1.**
 
 ### The Problem
 
-Hard-coding server IP addresses in application configuration can create problems because infrastructure may be replaced or recreated, causing IP addresses to change.
+Hard-coding infrastructure IP addresses into application configuration creates unnecessary coupling.
 
-For example, if the Application layer is configured to connect to a Database server using a hard-coded IP address and that Database server is replaced with a new IP address, the Application may continue trying to connect to the old address.
+If an EC2 instance is replaced, its private IP address may change.
+
+For example:
+
+```text
+DB_HOST=10.0.3.25
+```
+
+could become invalid after the Database server is recreated.
 
 ### What I Learned
 
-- Instead of unnecessarily depending on hard-coded IP addresses, we can use DNS names to identify services.
+DNS allows applications to identify services using stable names instead of depending directly on infrastructure IP addresses.
 
-- DNS resolves the service name to its corresponding IP address.
+For example, we could eventually use:
 
-- For example, instead of configuring:
+```text
+DB_HOST=db.cloudopshub.internal
+```
 
-  `DB_HOST=10.0.3.25`
-
-  we could eventually use something like:
-
-  `DB_HOST=db.cloudopshub.internal`
-
-- If the underlying IP address changes, the DNS record can be updated while the Application continues using the same service name.
-
-- DNS helps us separate the identity of a service from the underlying infrastructure address.
-
+If the underlying infrastructure changes, the DNS record can be updated while the application continues using the same service name.
 
 ### CloudOps Hub V1 Decision
 
-Custom DNS has not been implemented in V1 yet. We will introduce it when the application architecture creates a requirement for stable internal service names.
+Custom internal DNS has not yet been implemented.
+
+We will introduce it when the application architecture creates a real requirement for stable service discovery.
 
 ---
 
 ## 10. CloudOps Hub V1 Network Implementation
 
-After understanding the core VPC networking concepts, the CloudOps Hub V1 network was manually created in AWS.
+The CloudOps Hub V1 network was manually created in AWS.
 
-The goal of V1 is to build and understand the networking components manually before introducing automation or a more highly available architecture.
+The goal is to understand the networking components and their relationships before introducing infrastructure automation.
 
 ### VPC
 
@@ -323,49 +419,57 @@ The goal of V1 is to build and understand the networking components manually bef
 
 | Subnet | CIDR | Purpose |
 |---|---|---|
-| `cloudops-web-subnet` | `10.0.1.0/24` | Web layer |
-| `cloudops-app-subnet` | `10.0.2.0/24` | Application layer |
-| `cloudops-db-subnet` | `10.0.3.0/24` | Database layer |
+| `cloudops-web-subnet` | `10.0.1.0/24` | Web/Public layer |
+| `cloudops-app-subnet` | `10.0.2.0/24` | Private Application layer |
+| `cloudops-db-subnet` | `10.0.3.0/24` | Private Database layer |
 
-Each subnet is currently deployed within a single Availability Zone as part of the initial V1 implementation.
+All three subnets are currently in a single Availability Zone for the initial V1 implementation.
 
 ### Route Tables
 
-Dedicated route tables were created for each application layer so that their routing policies can evolve independently.
-
-| Route Table | Associated Subnet | Internet Route |
+| Route Table | Associated Subnet | Default Route |
 |---|---|---|
 | `cloudops-public-rt` | Web subnet | `0.0.0.0/0 → Internet Gateway` |
 | `cloudops-app-rt` | Application subnet | None |
-| `cloudops-db-rt` | Database subnet | None |
+| `cloudops-db-rt` | Database subnet | `0.0.0.0/0 → NAT Gateway` |
 
-All three route tables also contain the local VPC route:
+All route tables also contain:
 
-`10.0.0.0/16 → local`
-
-This local route provides a routing path for communication within the VPC address space, subject to the configured network security controls.
+```text
+10.0.0.0/16 → local
+```
 
 ### Internet Gateway
 
-An Internet Gateway named:
+```text
+cloudops-hub-igw
+```
 
-`cloudops-hub-igw`
+is attached to:
 
-was created and attached to:
+```text
+cloudops-hub-vpc
+```
 
-`cloudops-hub-vpc`
+The public route table contains:
 
-The Web subnet's route table contains the following default route:
+```text
+0.0.0.0/0 → cloudops-hub-igw
+```
 
-`0.0.0.0/0 → cloudops-hub-igw`
+### NAT Gateway
 
-This provides the Web subnet with a direct routing path to the Internet Gateway.
+A NAT Gateway was introduced when the private Database EC2 instance required outbound connectivity.
 
-The Application and Database subnet route tables do not have a direct route to the Internet Gateway.
+The Database route table contains:
+
+```text
+0.0.0.0/0 → NAT Gateway
+```
+
+The NAT Gateway itself is deployed in the public subnet and reaches the Internet through the Internet Gateway.
 
 ### Security Groups
-
-Three Security Groups were created to represent the communication boundaries between the application layers:
 
 | Security Group | Intended Inbound Access |
 |---|---|
@@ -373,131 +477,123 @@ Three Security Groups were created to represent the communication boundaries bet
 | `cloudops-app-sg` | Web Security Group → Application port |
 | `cloudops-db-sg` | Application Security Group → PostgreSQL `5432` |
 
-The intended communication flow is:
-
-`Internet → Web → Application → Database`
-
-The security design follows the principle that each layer should accept only the traffic required for its function.
-
-Direct Internet access to the Application and Database layers is not part of the V1 design.
-
-### Current Network Flow
+### Current Network Design
 
 ```text
-                         Internet
-                            |
-                            |
-                     Internet Gateway
-                   cloudops-hub-igw
-                            |
-                            |
-                cloudops-public-rt
-                  0.0.0.0/0 -> IGW
-                            |
-                            v
-                  cloudops-web-subnet
-                     10.0.1.0/24
-                            |
-                            | Application Port
-                            v
-                  cloudops-app-subnet
-                     10.0.2.0/24
-                            |
-                            | PostgreSQL 5432
-                            v
-                   cloudops-db-subnet
-                     10.0.3.0/24
-
+                           Internet
+                              │
+                              ▼
+                      Internet Gateway
+                      cloudops-hub-igw
+                         /          \
+                        /            \
+                       ▼              ▼
+              Public Web Path     NAT Gateway
+                       │              ▲
+                       ▼              │
+             cloudops-web-subnet      │
+                  10.0.1.0/24         │
+                       │              │
+                       ▼              │
+             cloudops-app-subnet      │
+                  10.0.2.0/24         │
+                       │              │
+                 PostgreSQL 5432      │
+                       ▼              │
+              cloudops-db-subnet ─────┘
+                  10.0.3.0/24
+                       │
+                       ▼
+                 PostgreSQL EC2
+                   No Public IP
 ```
 
-### Not Implemented in V1
+The NAT path is for outbound connectivity from the private Database subnet.
 
-The following concepts were studied but have not been implemented because the current V1 architecture does not yet require them:
+The intended application traffic path remains:
 
-- NAT Gateway
+```text
+Internet → Web → Application → Database
+```
+
+### Not Yet Implemented
+
+The following concepts have been studied but are not currently implemented:
+
 - Custom Network ACLs
 - Custom internal DNS
 - Multi-AZ networking
-
----
+- High-availability network architecture
 
 ---
 
 ## 11. Architecture Decisions
 
-The following architecture decisions were made for the CloudOps Hub V1 networking foundation.
-
 ### 1. Use a Dedicated VPC
 
 **Decision:**  
-Create a dedicated VPC for CloudOps Hub instead of deploying the resources into the default VPC.
+Create a dedicated VPC rather than using the default VPC.
 
 **Reason:**  
-A dedicated VPC gives us control over IP addressing, subnet design, routing, connectivity, and security boundaries.
-
-It also allows the CloudOps Hub network to evolve independently as the architecture grows.
+This gives CloudOps Hub control over IP addressing, segmentation, routing, connectivity, and security boundaries.
 
 ---
 
 ### 2. Use `10.0.0.0/16` as the VPC CIDR
 
-**Decision:**  
-Use the following CIDR for the CloudOps Hub VPC:
+**Decision:**
 
-`10.0.0.0/16`
+```text
+10.0.0.0/16
+```
 
 **Reason:**  
-A `/16` provides sufficient private IP address space to divide the network into multiple smaller subnets and leaves room for the architecture to grow.
+A `/16` provides enough private address space to divide the network into smaller subnets while leaving room for growth.
 
-IP address planning is also important because overlapping CIDR ranges can create challenges if CloudOps Hub needs to connect with other networks in the future.
+CIDR planning also reduces the risk of future network overlap.
 
 ---
 
-### 3. Separate the Web, Application, and Database Networks
+### 3. Separate Web, Application, and Database Networks
 
-**Decision:**  
-Create separate subnets for each application layer:
+**Decision:**
 
-- Web: `10.0.1.0/24`
-- Application: `10.0.2.0/24`
-- Database: `10.0.3.0/24`
+```text
+Web          10.0.1.0/24
+Application  10.0.2.0/24
+Database     10.0.3.0/24
+```
 
 **Reason:**  
-Each application layer has different connectivity requirements.
+Each layer has different connectivity and security requirements.
 
-The Web layer requires public-facing connectivity, while the Application and Database layers should remain private.
-
-Separating the layers allows their routing and connectivity requirements to be managed independently.
+Separating them allows those policies to evolve independently.
 
 ---
 
 ### 4. Use Dedicated Route Tables
 
 **Decision:**  
-Create separate route tables for the Web, Application, and Database subnets.
+Use separate route tables for Web, Application, and Database subnets.
 
 **Reason:**  
-Different application layers may require different routing policies.
+Each layer can have a different routing policy.
 
-For example, the Application subnet may eventually require controlled outbound Internet access through a NAT Gateway, while the Database subnet may not require Internet connectivity.
-
-Keeping their route tables separate allows one layer's routing policy to change without unnecessarily changing another layer.
+This became particularly useful when the Database layer later required NAT connectivity while the Application subnet did not yet require it.
 
 > **Different connectivity requirements should have different routing policies.**
 
 ---
 
-### 5. Provide Direct Internet Routing Only to the Web Subnet
+### 5. Provide Direct Internet Routing Only Where Required
 
 **Decision:**  
-Only the Web subnet has the following route:
-
-`0.0.0.0/0 → Internet Gateway`
+Only the Web/public subnet has a direct default route to the Internet Gateway.
 
 **Reason:**  
-The Web layer needs to receive user traffic, while the Application and Database layers should not have direct Internet connectivity.
+The Application and Database workloads should not be directly internet-accessible.
 
-Providing Internet routing only where it is required reduces unnecessary network exposure.
+The Database layer's outbound connectivity is instead provided through NAT.
 
 > **Don't provide network connectivity simply because you can. Provide only the connectivity the workload actually requires.**
 
@@ -506,74 +602,80 @@ Providing Internet routing only where it is required reduces unnecessary network
 ### 6. Use Separate Security Groups for Each Layer
 
 **Decision:**  
-Create separate Security Groups for the Web, Application, and Database layers.
+Create separate Security Groups for Web, Application, and Database workloads.
 
 **Reason:**  
-Each layer should accept only the traffic required to perform its function.
+Each layer should accept only the traffic required for its function.
 
-The intended communication path is:
+The intended path is:
 
-`Internet → Web → Application → Database`
-
-For example, the Database layer should accept PostgreSQL traffic from the Application layer rather than accepting database connections from the entire VPC or Internet.
+```text
+Internet → Web → Application → Database
+```
 
 > **Network membership does not imply network trust.**
 
 ---
 
-### 7. Use Security Group Relationships Between Application Layers
+### 7. Use Security Group Relationships
 
 **Decision:**  
-Use Security Group references where possible instead of depending on individual server IP addresses.
+Use Security Group references where possible instead of individual server IP addresses.
 
-For example:
+Example:
 
-`cloudops-app-sg → cloudops-db-sg :5432`
+```text
+cloudops-app-sg → cloudops-db-sg :5432
+```
 
 **Reason:**  
-Application servers may eventually be replaced or scaled, causing their IP addresses to change.
+Infrastructure can be replaced or scaled and IP addresses can change.
 
-Using Security Group relationships allows the security policy to represent the application architecture instead of individual infrastructure addresses.
+The security policy should represent the application relationship rather than individual infrastructure addresses.
 
 ---
 
-### 8. Do Not Implement NAT Without a Requirement
+### 8. Introduce NAT Only When Required
 
-**Decision:**  
-Do not deploy a NAT Gateway in the initial V1 network.
+**Original Decision:**  
+Do not deploy a NAT Gateway without a confirmed requirement.
+
+**What Changed:**  
+During the Database Foundation implementation, the private PostgreSQL EC2 instance required controlled outbound connectivity while remaining without a public IP address.
+
+**Updated Decision:**  
+Introduce a NAT Gateway and route the Database subnet's outbound traffic through it.
 
 **Reason:**  
-The current architecture does not yet have a confirmed requirement for private resources to access the Internet.
+The NAT Gateway now solves an actual connectivity requirement.
 
-A NAT Gateway will be introduced if the Application layer requires controlled outbound Internet connectivity.
+Because NAT Gateway has an ongoing cost, it may be deleted when the CloudOps Hub learning environment is not being used.
 
-This avoids introducing unnecessary infrastructure, complexity, and cost.
+> **Architecture should evolve when requirements change.**
 
 ---
 
 ### 9. Do Not Create Custom NACLs Without a Requirement
 
 **Decision:**  
-Use the default Network ACL for the initial V1 implementation.
+Use the default Network ACL for V1.
 
 **Reason:**  
-Security Groups currently provide the workload-level traffic controls required by CloudOps Hub.
+Security Groups currently provide the required workload-level controls.
 
-Custom NACL rules will be introduced only if a future requirement requires additional subnet-level Allow or Deny controls.
+Custom NACLs will be introduced if a future requirement needs subnet-level Allow/Deny controls.
 
 ---
 
 ### 10. Start With a Single Availability Zone
 
 **Decision:**  
-Deploy the initial manual V1 architecture within a single Availability Zone.
+Deploy the initial manual V1 architecture within one Availability Zone.
 
 **Reason:**  
-The goal of V1 is to understand and manually validate the individual architecture components before introducing high-availability complexity.
+The current objective is to understand and validate individual components before introducing high-availability complexity.
 
 This is a known trade-off rather than the target production architecture.
-
-The architecture will later evolve to multiple Availability Zones when we introduce high availability and failure tolerance.
 
 > **Redundancy doesn't automatically give you high availability. You have to architect the system to use that redundancy.**
 
@@ -581,34 +683,29 @@ The architecture will later evolve to multiple Availability Zones when we introd
 
 ### Engineering Principle
 
-The networking architecture is being built around application requirements rather than adding AWS services simply because they are commonly used.
+CloudOps Hub networking is built around application requirements rather than adding AWS services simply because they are commonly used.
 
-For every new component, the first question should be:
+For every new component, the first question is:
 
 > **What problem are we trying to solve?**
 
-Only then should we decide which AWS service or architecture pattern is appropriate.
-
-
----
+Only then should we choose the AWS service or architecture pattern.
 
 ---
 
 ## 12. Current Limitations and Future Improvements
 
-CloudOps Hub V1 is intentionally designed as a simple manual implementation so that each networking component can be understood, deployed, and validated individually.
+CloudOps Hub V1 is intentionally a simple manual implementation.
 
-The following limitations are known and intentionally accepted for V1.
+The following limitations are known and accepted.
 
 ### 1. Single Availability Zone
 
 **Current Limitation:**  
-The Web, Application, and Database subnets are currently deployed within a single Availability Zone.
-
-If that Availability Zone becomes unavailable, CloudOps Hub may become unavailable.
+The current subnets are deployed within a single Availability Zone.
 
 **Future Improvement:**  
-Distribute the application across multiple Availability Zones and introduce the required load balancing, health checks, and redundancy mechanisms.
+Distribute the architecture across multiple Availability Zones and introduce load balancing, health checks, and appropriate redundancy.
 
 ---
 
@@ -617,69 +714,79 @@ Distribute the application across multiple Availability Zones and introduce the 
 **Current Limitation:**  
 V1 does not currently provide redundant Web, Application, or Database resources.
 
-Individual server failures may therefore impact application availability.
-
 **Future Improvement:**  
-Introduce redundancy gradually after the manual single-instance architecture has been successfully deployed and validated.
-
-The goal is not simply to create more servers, but to ensure traffic can be redirected to healthy resources when failures occur.
+Introduce redundancy after the single-instance architecture has been fully understood and validated.
 
 ---
 
-### 3. HTTP Used During Initial Testing
+### 3. HTTP During Initial Testing
 
 **Current Limitation:**  
-The initial Web layer allows HTTP traffic on port `80` for learning and testing.
+The initial Web layer design allows HTTP on port `80` for learning and testing.
 
 **Future Improvement:**  
-Introduce HTTPS using TLS certificates once the basic end-to-end application flow has been validated.
-
-The target architecture should not expose production application traffic over unencrypted HTTP.
+Introduce HTTPS/TLS when the Web layer is implemented and the end-to-end application flow is validated.
 
 ---
 
-### 4. NAT Gateway Not Implemented
+### 4. NAT Gateway Cost
 
 **Current Limitation:**  
-The Application subnet currently has no outbound Internet route.
+The NAT Gateway provides useful outbound connectivity but introduces an ongoing cost even in a small learning environment.
+
+**Current Approach:**  
+The NAT Gateway may be deleted when the environment is not being used and recreated when required.
 
 **Future Improvement:**  
-If the Application layer requires outbound Internet connectivity, evaluate and introduce an appropriate controlled outbound connectivity solution.
-
-A NAT Gateway should only be introduced when there is a requirement that justifies the additional infrastructure and cost.
+As the architecture evolves, evaluate the most appropriate outbound/private AWS service connectivity design based on requirements, security, and cost.
 
 ---
 
 ### 5. Custom Internal DNS Not Implemented
 
 **Current Limitation:**  
-CloudOps Hub does not currently have a custom internal DNS strategy for communication between application components.
+CloudOps Hub does not yet have a custom internal DNS strategy.
 
 **Future Improvement:**  
-Introduce stable service names when required so application components do not unnecessarily depend on infrastructure IP addresses.
+Introduce stable service names when application components require them.
 
 ---
 
 ### 6. Custom Network ACLs Not Implemented
 
 **Current Limitation:**  
-CloudOps Hub V1 uses the default Network ACL and relies primarily on Security Groups for workload-level traffic control.
+V1 currently relies primarily on Security Groups and the default Network ACL.
 
 **Future Improvement:**  
-Introduce custom Network ACL rules if future security requirements require explicit subnet-level Allow or Deny controls.
+Introduce custom NACLs if future security requirements require explicit subnet-level Allow or Deny controls.
+
+---
+
+### 7. Infrastructure Is Manually Recreated
+
+**Current Limitation:**  
+Network and runtime resources are currently being created and modified manually.
+
+This is intentional during the first-principles learning phase.
+
+**Future Improvement:**  
+Once the manual process and its operational overhead are understood, introduce Infrastructure as Code to make infrastructure creation, modification, and teardown repeatable.
 
 ---
 
 ## V1 Networking Goal
 
-The purpose of V1 is not to build the final production architecture immediately.
+The purpose of V1 is not to immediately build the final production architecture.
 
 The goal is to:
 
 1. Understand the networking components.
 2. Deploy them manually.
 3. Validate how traffic flows between application layers.
-4. Identify limitations through practical experience.
-5. Improve the architecture only when there is a clear requirement.
+4. Troubleshoot real connectivity requirements.
+5. Understand the cost and security implications of architecture decisions.
+6. Identify limitations through practical experience.
+7. Improve the architecture when there is a clear requirement.
+8. Eventually automate the processes we already understand.
 
 > **Build the simplest architecture that satisfies the current requirements, understand its limitations, and evolve it deliberately.**
