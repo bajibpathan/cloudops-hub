@@ -41,9 +41,9 @@ CloudOps Hub follows a layered architecture with:
 | Cloud Engineering Foundations | ✅ Completed |
 | Network Foundation | ✅ Completed |
 | Database Foundation | ✅ Implemented & Validated |
-| App → Database Connectivity | 🔜 Next |
-| Application Layer | ⏳ Planned |
-| Web Layer | ⏳ Planned |
+| App → Database Connectivity | ✅ Implemented & Validated |
+| Application Layer | ✅ Implemented & Validated |
+| Web Layer | 🔜 Next |
 | Observability | ⏳ Planned |
 | Automation / IaC | ⏳ Planned |
 | CI/CD & Containers | ⏳ Planned |
@@ -89,6 +89,7 @@ Detailed implementation notes, commands, troubleshooting, and engineering decisi
 
 - [VPC Networking Foundation](docs/networking/vpc-foundation.md)
 - [Database Foundation](docs/database/database-foundation.md)
+- [Application Layer Foundation](docs/application/application-foundation.md)
 
 Additional documentation will be added as each CloudOps Hub milestone is completed.
 
@@ -110,20 +111,16 @@ This reduces unnecessary cloud cost and creates a natural reason to introduce In
 
 The next milestone is:
 
-### Private Application → Database Connectivity
+### Web Layer → Application Layer Connectivity
 
 ```text
+User
+  ↓
+Web Layer
+  ↓
 Application Layer
-       │
-       │ TCP 5432
-       ▼
-Database Layer
-       │
-       ▼
+  ↓
 PostgreSQL
-```
-
-This will validate private communication between application tiers using VPC networking, Security Groups, PostgreSQL configuration, and database authentication.
 
 ---
 

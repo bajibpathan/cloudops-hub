@@ -821,38 +821,29 @@ Introduce infrastructure and database observability after the basic application 
 
 ### 12.5 Remote Application Connectivity
 
-#### Current Limitation
+Private Application → Database connectivity has now been implemented and validated.
 
-The database has currently been validated locally from the DB EC2 instance.
-
-The future Application server still needs to communicate with PostgreSQL over the private VPC network.
-
-The intended path is:
+The Application EC2 instance connects to PostgreSQL over the private VPC network:
 
 ```text
-App EC2
-cloudops-app-subnet
+cloudops-app-01
        │
        │ TCP 5432
        ▼
 cloudops-db-sg
        │
        ▼
-PostgreSQL
 cloudops-db-01
+       │
+       ▼
+PostgreSQL
 ```
 
-This will require both:
+PostgreSQL was configured to listen for remote connections, and `pg_hba.conf` allows the `cloudops_app` identity to access `cloudops_hub` from the Application subnet using SCRAM authentication.
 
-```text
-AWS Network Security
-        +
-PostgreSQL Configuration
-```
+The connection was validated using both the PostgreSQL client and the CloudOps Hub Flask backend.
 
-Both layers must allow the connection.
-
-> **A production-inspired architecture should evolve because of requirements, not because every possible feature exists.**
+The backend successfully performed both SELECT and INSERT operations against the `applications` table.
 
 ---
 
