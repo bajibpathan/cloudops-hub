@@ -1,0 +1,75 @@
+/* app/frontend/styles.css */
+
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    background: #f4f6f8;
+    color: #222;
+}
+
+.container {
+    max-width: 900px;
+    margin: 40px auto;
+    padding: 0 20px;
+}
+
+h1 {
+    margin-bottom: 5px;
+}
+
+.subtitle {
+    margin-top: 0;
+    color: #666;
+}
+
+.card {
+    background: white;
+    padding: 24px;
+    margin-top: 24px;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+form {
+    display: grid;
+    gap: 12px;
+}
+
+input,
+select,
+textarea,
+button {
+    padding: 10px;
+    font-size: 14px;
+}
+
+textarea {
+    min-height: 80px;
+}
+
+button {
+    cursor: pointer;
+}
+
+.section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.application-item {
+    border-bottom: 1px solid #ddd;
+    padding: 12px 0;
+}
+
+.application-item:last-child {
+    border-bottom: none;
+}
+
+.status {
+    font-weight: bold;
+}
+
+#message {
+    margin-top: 12px;
+}

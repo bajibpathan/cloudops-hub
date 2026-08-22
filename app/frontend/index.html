@@ -1,0 +1,58 @@
+<!-- app/frontend/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CloudOps Hub</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <main class="container">
+        <h1>☁️ CloudOps Hub</h1>
+        <p class="subtitle">Manual V1 - Three-Tier Application</p>
+
+        <section class="card">
+            <h2>Add Application</h2>
+
+            <form id="application-form">
+                <input id="name" placeholder="Application name" required>
+                <input id="owner_team" placeholder="Owner team" required>
+
+                <select id="environment" required>
+                    <option value="">Select environment</option>
+                    <option value="Development">Development</option>
+                    <option value="Test">Test</option>
+                    <option value="Production">Production</option>
+                </select>
+
+                <select id="status" required>
+                    <option value="">Select status</option>
+                    <option value="Healthy">Healthy</option>
+                    <option value="Degraded">Degraded</option>
+                    <option value="Unknown">Unknown</option>
+                </select>
+
+                <textarea id="description" placeholder="Description"></textarea>
+
+                <button type="submit">Add Application</button>
+            </form>
+
+            <p id="message"></p>
+        </section>
+
+        <section class="card">
+            <div class="section-header">
+                <h2>Applications</h2>
+                <button id="refresh-button" type="button">Refresh</button>
+            </div>
+
+            <div id="applications">
+                Loading applications...
+            </div>
+        </section>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>

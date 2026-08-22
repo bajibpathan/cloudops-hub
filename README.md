@@ -1,135 +1,199 @@
 # ☁️ CloudOps Hub
 
-> **A production-inspired cloud engineering project built from first principles.**
+> A production-inspired cloud engineering project built from first principles.
 
-CloudOps Hub is a hands-on AWS project where I am learning to design, build, operate, troubleshoot, and gradually automate a cloud platform.
+CloudOps Hub is a hands-on AWS project where I am learning how cloud platforms are designed, built, operated, troubleshot, and eventually automated.
 
-Instead of starting with tools and services, I start with the **engineering problem**, understand the principle behind it, build the solution manually, and introduce automation as the platform evolves.
+Instead of starting with AWS services, I start with the engineering problem, understand the principle behind it, build the solution manually, validate it, troubleshoot it, and only then introduce automation.
 
 ---
 
 ## 🎯 Goal
 
-The goal is not to memorize AWS services, but to understand **why they exist, what problems they solve, and what trade-offs they introduce.**
+The goal is not to memorize AWS services.
 
-> **Learn the problem → Understand the principle → Design → Build → Validate → Troubleshoot → Automate → Improve**
+The goal is to understand:
 
----
+- Why cloud services exist
+- What problems they solve
+- What trade-offs they introduce
+- How production systems are designed and operated
 
-## 🏗️ Architecture
-
-![CloudOps Hub Target Architecture](docs/architecture/cloudops-hub-architecture.png)
-
-CloudOps Hub follows a layered architecture with:
-
-- Public Web Layer
-- Private Application Layer
-- Private Database Layer
-- Multi-AZ design
-- Controlled network access between layers
-- Secure administrative access
-- Observability and automation introduced incrementally
-
-> The diagram represents the **target architecture**. Components are implemented gradually as the project evolves.
-
----
-
-## 🚧 Project Progress
-
-| Area | Status |
-|---|---|
-| Cloud Engineering Foundations | ✅ Completed |
-| Network Foundation | ✅ Completed |
-| Database Foundation | ✅ Implemented & Validated |
-| App → Database Connectivity | ✅ Implemented & Validated |
-| Application Layer | ✅ Implemented & Validated |
-| Web Layer | 🔜 Next |
-| Observability | ⏳ Planned |
-| Automation / IaC | ⏳ Planned |
-| CI/CD & Containers | ⏳ Planned |
+```text
+Learn the Problem
+        ↓
+Understand the Principle
+        ↓
+Design
+        ↓
+Build
+        ↓
+Validate
+        ↓
+Troubleshoot
+        ↓
+Automate
+        ↓
+Improve
+```
 
 ---
 
-## 🗄️ Current Milestone: Database Foundation
+## 🏗️ Current Architecture (Manual V1)
 
-For V1, PostgreSQL was intentionally deployed on **Amazon EC2 instead of immediately using Amazon RDS**.
+![CloudOps Hub Architecture](docs/architecture/cloudops-hub-v1-architecture.png)
 
-The purpose was to understand the operational responsibilities involved in managing a database ourselves.
+CloudOps Hub V1 implements a three-tier AWS architecture:
 
-### What was implemented
+- **Web Layer:** Amazon EC2 + Nginx
+- **Application Layer:** Amazon EC2 + Python Flask
+- **Database Layer:** Amazon EC2 + PostgreSQL
+- **Administration:** AWS Systems Manager Session Manager
+- **Network Security:** Security Group controlled communication between tiers
 
-- Private Amazon Linux EC2 database server
+---
+## 🔭 Target Architecture
+
+![CloudOps Hub Target Architecture](docs/architecture/cloudops-hub-target-architecture.png)
+
+CloudOps Hub will evolve incrementally toward a highly available,
+automated, observable architecture as later phases are implemented.
+
+---
+## ✅ Manual V1 Completed
+
+CloudOps Hub V1 has been deployed and validated manually.
+
+### Infrastructure
+
+- Custom VPC
+- Public and Private Subnets
+- Internet Gateway
+- Route Tables
+- NAT Gateway
+- Security Groups
+- AWS Systems Manager
+
+### Database Layer
+
+- Amazon Linux EC2
 - PostgreSQL 18
-- AWS Systems Manager administrative access
-- No public IP or inbound SSH
-- Dedicated `cloudops_hub` database
-- Dedicated `cloudops_app` identity
-- SCRAM authentication
-- Initial application schema
-- INSERT and SELECT validation
+- SCRAM Authentication
+- Private Database Server
+- Application Schema
 
-This also provided hands-on experience with PostgreSQL installation, initialization, service management, authentication, permissions, and troubleshooting.
+### Application Layer
 
-> **To appreciate a managed service, first understand the operational burden it removes.**
+- Python Flask Backend
+- PostgreSQL Integration
+- REST API Endpoints
+- systemd Service Management
 
-📖 [Database Foundation Documentation](docs/database/database-foundation.md)
+### Web Layer
+
+- Nginx
+- Reverse Proxy
+- Static Frontend
+- Browser-to-Database Validation
+
+### Validation
+
+Successfully validated:
+
+```text
+Browser
+   ↓
+Nginx
+   ↓
+Flask
+   ↓
+PostgreSQL
+   ↓
+Data Persistence
+```
 
 ---
 
 ## 📚 Documentation
-
-Detailed implementation notes, commands, troubleshooting, and engineering decisions are maintained separately.
 
 ### Engineering Principles
 
 - [Cloud Engineering Foundations](docs/engineering-principles/01-cloud-engineering-foundations.md)
 - [Automation and Safe Delivery](docs/engineering-principles/02-automation-and-safe-delivery.md)
 
-### Infrastructure
+### Infrastructure Foundations
 
 - [VPC Networking Foundation](docs/networking/vpc-foundation.md)
 - [Database Foundation](docs/database/database-foundation.md)
-- [Application Layer Foundation](docs/application/application-foundation.md)
+- [Application Foundation](docs/application/application-foundation.md)
+- [Web Foundation](docs/web/web-foundation.md)
 
-Additional documentation will be added as each CloudOps Hub milestone is completed.
+### Operations
+
+- [Manual V1 Deployment Runbook](docs/runbooks/manual-v1-deployment.md)
 
 ---
 
-## 💰 Learning Environment & Cost
+## 🚧 Project Roadmap
 
-CloudOps Hub is a learning environment, so runtime infrastructure does not need to remain active when it is not being used.
+### Phase 1 — Manual Deployment ✅
+
+Build everything manually to understand how the platform works.
+
+### Phase 2 — Shell Scripting 🔜
+
+Automate repetitive deployment tasks using Bash scripts.
+
+### Phase 3 — Configuration Management
+
+Introduce Ansible.
+
+### Phase 4 — Infrastructure as Code
+
+Introduce Terraform.
+
+### Phase 5 — Containers & Orchestration
+
+Docker and Kubernetes.
+
+### Phase 6 — Observability
+
+Monitoring, logging, dashboards, and alerting.
+
+### Phase 7 — CI/CD
+
+Automated deployment pipelines.
+
+---
+
+## 💰 Learning Environment
+
+CloudOps Hub follows a cost-conscious learning approach.
 
 ```text
-Build → Learn → Validate → Document → Destroy → Recreate
+Build
+  ↓
+Learn
+  ↓
+Validate
+  ↓
+Document
+  ↓
+Destroy
+  ↓
+Recreate
 ```
 
-This reduces unnecessary cloud cost and creates a natural reason to introduce Infrastructure as Code and configuration automation later.
-
----
-
-## 🔜 Next
-
-The next milestone is:
-
-### Web Layer → Application Layer Connectivity
-
-```text
-User
-  ↓
-Web Layer
-  ↓
-Application Layer
-  ↓
-PostgreSQL
+Infrastructure is regularly destroyed and rebuilt to reinforce learning while minimizing AWS costs.
 
 ---
 
 ## 🧠 Engineering Philosophy
 
-CloudOps Hub follows one principle throughout the project:
+> Don't learn a tool first. Understand the problem first.
 
-> **Don't learn a tool first. Understand the problem first, solve it manually, experience the operational pain, and then automate with purpose.**
+CloudOps Hub focuses on understanding systems, troubleshooting failures, and making engineering trade-offs before introducing automation.
 
 The objective is not to deploy as many AWS services as possible.
 
-It is to learn how to **think, build, troubleshoot, and make trade-offs like a Cloud Engineer.**
+The objective is to think, build, troubleshoot, and operate systems like a Cloud Engineer.
